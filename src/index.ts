@@ -46,8 +46,10 @@ export class Kable {
 
       if (reqParams.data !== undefined) {
         http2request.write(reqParams.data, reqParams.encoding, (error) => {
-          this.state = KableStatus.error;
-          reject(error);
+          if (error != null) {
+            this.state = KableStatus.error;
+            reject(error);
+          }
         });
       }
 
