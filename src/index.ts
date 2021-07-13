@@ -7,37 +7,80 @@ import {
   KableRequestOptions,
   KableResponse,
   KableStatus,
+  PingResponseListener,
 } from './types';
 
 export * from './types';
 
 export class Kable {
-  private http2client;
+  private connectParams: ConnectParams;
+
+  private http2client?: http2.ClientHttp2Session;
 
   private state: KableStatus = KableStatus.connecting;
 
+  private pingTimeoutId: NodeJS.Timeout | null = null;
+
+  private pingResponseListener?: PingResponseListener;
+
   private constructor(config: ConnectParams) {
-    this.http2client = http2.connect(config.baseUrl, {
-      ca: config.ca,
-    });
+    this.connectParams = config;
   }
 
   public static async connect(params: ConnectParams): Promise<Kable> {
     return new Promise((resolve, reject) => {
       const kable = new Kable(params);
-      kable.http2client.on('error', (error) => {
-        kable.state = KableStatus.error;
+      kable.makeConnection(params).then(() => resolve(kable)).catch((error) => reject(error));
+    });
+  }
+
+  private async makeConnection(params: ConnectParams): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.http2client = http2.connect(this.connectParams.baseUrl, {
+        ca: this.connectParams.ca,
+      });
+
+      this.http2client.on('error', (error) => {
+        this.state = KableStatus.error;
         reject(error);
       });
-      kable.http2client.on('connect', () => {
-        kable.state = KableStatus.connected;
-        resolve(kable);
+
+      this.http2client.on('connect', () => {
+        this.state = KableStatus.connected;
+        resolve();
       });
+
+      this.http2client.on('goaway', () => {
+        this.state = KableStatus.closed;
+      });
+
+      this.startNewPing();
     });
   }
 
   public async request(reqParams: KableRequestOptions): Promise<KableResponse> {
     return new Promise((resolve, reject) => {
+      if (this.http2client === undefined) {
+        throw new Error('No http2client created - must connect before sending request');
+      }
+
+      if (this.state === KableStatus.closed || this.state === KableStatus.error
+        || this.http2client.closed || this.http2client.destroyed) {
+        if (reqParams.resubmitted) {
+          reject(new Error('Failed to reconnect'));
+        } else {
+          this.makeConnection(this.connectParams).then(() => {
+            this.request({
+              ...reqParams,
+              resubmitted: true,
+            }).then((response) => resolve(response)).catch((error) => reject(error));
+          }).catch((error) => reject(error));
+        }
+        return;
+      }
+
+      this.startNewPing();
+
       const http2request = this.http2client.request({
         [http2.constants.HTTP2_HEADER_PATH]: reqParams.path,
         [http2.constants.HTTP2_HEADER_METHOD]: reqParams.method,
@@ -116,9 +159,11 @@ export class Kable {
 
   public async close(): Promise<void> {
     return new Promise((resolve) => {
-      this.http2client.close(() => {
-        resolve();
-      });
+      if (this.http2client) {
+        this.http2client.close(() => {
+          resolve();
+        });
+      }
     });
   }
 
@@ -157,6 +202,30 @@ export class Kable {
           this.state = KableStatus.error;
           reject(error);
         });
+      }
+    });
+  }
+
+  private startNewPing(): void {
+    if (this.connectParams.pingTimeout) {
+      if (this.pingTimeoutId) {
+        clearTimeout(this.pingTimeoutId);
+      }
+      this.pingTimeoutId = setTimeout(this.ping.bind(this), this.connectParams.pingTimeout);
+    }
+  }
+
+  private async ping(): Promise<void> {
+    if (this.http2client === undefined) {
+      throw new Error('No http2client created - must connect before pinging');
+    }
+    this.http2client.ping((error, duration) => {
+      if (error) {
+        this.state = KableStatus.error;
+        return;
+      }
+      if (this.pingResponseListener) {
+        this.pingResponseListener(duration);
       }
     });
   }

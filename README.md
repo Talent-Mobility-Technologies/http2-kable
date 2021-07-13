@@ -7,6 +7,20 @@ Node, this makes using HTTP/2 in Node apps a little easier.
 
 This is intended to work with Node 14 and up.
 
+## Install
+
+Add the package to your project:
+
+```
+yarn add http2-kable
+```
+
+or
+
+```
+npm install http2-kable
+```
+
 ## Usage
 
 Import the `Kable` class into your Javascript or Typescript project where
