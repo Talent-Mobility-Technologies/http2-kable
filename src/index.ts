@@ -44,15 +44,6 @@ export class Kable {
         ...reqParams.headers,
       });
 
-      if (reqParams.data !== undefined) {
-        http2request.write(reqParams.data, reqParams.encoding, (error) => {
-          if (error != null) {
-            this.state = KableStatus.error;
-            reject(error);
-          }
-        });
-      }
-
       const request: KableRequest = {
         ...reqParams,
         http2request,
@@ -63,6 +54,10 @@ export class Kable {
         headers: {},
         request,
       };
+
+      if (reqParams.data !== undefined) {
+        this.sendData(request);
+      }
 
       http2request.on('response', (headers) => {
         response.status = parseFloat(headers[http2.constants.HTTP2_HEADER_STATUS] as string);
@@ -75,6 +70,8 @@ export class Kable {
         }
         this.readData(request, response).then(resolve).catch(reject);
       });
+
+      http2request.end();
     });
   }
 
@@ -125,29 +122,27 @@ export class Kable {
     });
   }
 
+  private async sendData(request: KableRequest): Promise<void> {
+    return new Promise((resolve, reject) => {
+      request.http2request.on('error', (error) => {
+        this.state = KableStatus.error;
+        reject(error);
+      });
+
+      request.http2request.on('end', () => {
+        resolve();
+      })
+
+      request.http2request.write(request.data, request.encoding);
+    });
+  }
+
   private async readData(request: KableRequest, response: KableResponse): Promise<KableResponse> {
     return new Promise((resolve, reject) => {
       if (response.headers['content-encoding'] != null) {
         decompressor(request, response).then(resolve).catch(reject);
-      } else if (response.headers['content-length'] != null) {
-        response.data = Buffer.alloc(parseFloat(response.headers['content-length'] as string));
-        let start = 0;
-
-        request.http2request.on('data', (chunk: Buffer) => {
-          chunk.copy(response.data as Uint8Array, start, 0);
-          start += chunk.byteLength;
-        });
-
-        request.http2request.on('end', () => {
-          resolve(response);
-        });
-
-        request.http2request.on('error', (error) => {
-          this.state = KableStatus.error;
-          reject(error);
-        });
       } else {
-        let buffers: Buffer[] = [];
+        const buffers: Buffer[] = [];
 
         request.http2request.on('data', (chunk: Buffer) => {
           buffers.push(chunk);
