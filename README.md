@@ -5,6 +5,8 @@ Node.js HTTP/2 client and thus only works with Node. It is not intended to be
 a full featured HTTP client like Axios but, until Axios supports HTTP/2 on
 Node, this makes using HTTP/2 in Node apps a little easier.
 
+This is intended to work with Node 14 and up.
+
 ## Usage
 
 Import the `Kable` class into your Javascript or Typescript project where

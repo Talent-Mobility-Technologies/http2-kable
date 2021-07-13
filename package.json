@@ -1,6 +1,6 @@
 {
   "name": "http2-kable",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Simple HTTP/2 client",
   "main": "lib/index.js",
   "repository": "https://github.com/Talent-Mobility-Technologies/http2-kable.git",
