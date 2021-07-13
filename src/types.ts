@@ -1,8 +1,12 @@
 import http2 from 'http2';
 
+export type PingResponseListener = (duration: number) => void;
+
 export interface ConnectParams {
   baseUrl: string;
   ca?: string | Buffer;
+  pingTimeout?: number;
+  pingResponseListener?: PingResponseListener;
 }
 
 export enum KableStatus {
@@ -20,6 +24,7 @@ export interface KableRequestOptions {
   headers?: KableHeaders;
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS';
   path: string;
+  resubmitted?: boolean;
 }
 
 export interface KableRequest extends KableRequestOptions {
